@@ -1,0 +1,6 @@
+psutil
+pyyaml
+rich
+matplotlib
+pytest
+ruff
