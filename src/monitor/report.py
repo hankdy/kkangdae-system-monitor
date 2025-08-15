@@ -1,6 +1,8 @@
 # !/usr/bin/env python3 
 import json
+# json = 컴퓨터 프로그램의 변수값을 표현
 from datetime import datetime
+# from pathlib import Path =파일과 디렉터리 경로를 다룰 때 더 직관적이고 안전한 객체 지향 방식
 from pathlib import Path
 from statistics import mean
 import argparse
