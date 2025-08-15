@@ -23,6 +23,18 @@ def load_jsonl(path: Path):
                 yield json.loads(line)
 
 
+def summarize_processes(path: Path) -> dict: 
+    data = {} 
+    for row in load_jsonl(path):
+        for p in row.get("processes", []): 
+            name = p.get("name") or "unknown" 
+            entry = data.setdefault(name, {"cpu": [], "mem": [], "count": 0})
+            entry["cpu"].append(float(p.get("cpu") or 0.0))
+            entry["mem"].append(float(p.get("mem") or 0.0))
+            entry["count"] += 1
+
+
+
 def summarize(path: Path) -> dict:
     rows = list(load_jsonl(path))
     if not rows:
@@ -87,18 +99,59 @@ def plot(path: Path, out_dir: Path, tz: str = "kst"):
     out_dir.mkdir(parents=True, exist_ok=True)
     fig_path = out_dir / (path.stem + f"{suffix}.png")
 
-    plt.figure(figsize=(9, 4))
-    plt.plot(ts, cpu, label="CPU %")
-    plt.plot(ts, mem, label="MEM %")
-    plt.plot(ts, disk, label="DISK %")
-    plt.legend()
-    plt.title(f"System Metrics Over Time [{tz_label}]")
-    plt.xlabel(f"Time ({tz_label})")
+    plt.figure(figsize=(10, 4), dpi=120)
+    plt.plot(ts, cpu, label="CPU 사용률(%)",color = "#ff6b6b",linewidth =2)
+    plt.plot(ts, mem, label="MEM 사용률(%)",color = "#4dabf7",linewidth =2)
+    plt.plot(ts, disk, label="DISK 사용률(%)",color = "#94d82d",linewidth = 2)
+    plt.grid(True,alpha =0.3, linestyle = "--",linewidth=0.7)
+    plt.legend(loc = "upper left", frameon = False)
+    plt.title(f"시스템 자원 추이 [{tz_label}]")
+    plt.xlabel(f"시간 ({tz_label})")
+    plt.ylabel("사용률(%)")
     plt.tight_layout()
     plt.savefig(fig_path)
     plt.close()
 
     return fig_path
+
+def print_top_processes(items: list[dict], key: str = "cpu_avg", top: int = 10): 
+    key_label = "CPU 평균" if key == "cpu_avg" else "메모리 평균" 
+    items = sorted(items, key=lambda x: x[key], reverse=True)[:top] 
+    print(f"[프로세스 요약 - TOP {top} ({key_label} 기준)]")
+    for i, it in enumerate(items, 1):
+        print(f"{i:>2}) {it['name']:<20} | CPU {it['cpu_avg']:>5.1f}% | MEM {it['mem_avg']:>5.1f}% | 등장 {it['count']:>3}회")
+
+def plot_proc_bars(items: list[dict], out_dir: Path, date_str: str):
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+# CPU 평균 Top10
+    cpu_top = sorted(items, key=lambda x: x["cpu_avg"], reverse=True)[:10]
+    names = [x["name"] for x in cpu_top]
+    cpu_vals = [x["cpu_avg"] for x in cpu_top]
+    plt.figure(figsize=(10, 5), dpi=120)
+    plt.barh(names[::-1], cpu_vals[::-1], color="#ff922b")
+    plt.xlabel("CPU 평균(%)")
+    plt.title("프로세스 TOP10 (CPU 평균 기준)")
+    plt.tight_layout()
+    cpu_path = out_dir / f"proc-top-cpu-{date_str}.png"
+    plt.savefig(cpu_path)
+    plt.close()
+
+# 메모리 평균 Top10
+    mem_top = sorted(items, key=lambda x: x["mem_avg"], reverse=True)[:10]
+    names = [x["name"] for x in mem_top]
+    mem_vals = [x["mem_avg"] for x in mem_top]
+    plt.figure(figsize=(10, 5), dpi=120)
+    plt.barh(names[::-1], mem_vals[::-1], color="#4263eb")
+    plt.xlabel("메모리 평균(%)")
+    plt.title("프로세스 TOP10 (메모리 평균 기준)")
+    plt.tight_layout()
+    mem_path = out_dir / f"proc-top-mem-{date_str}.png"
+    plt.savefig(mem_path)
+    plt.close()
+
+    return cpu_path, mem_path
+
 
 
 def main():
@@ -130,14 +183,21 @@ def main():
     print(f"  MEM 최대 시각: UTC {summary['mem_max_time_utc']} | KST {summary['mem_max_time_kst']}")
     print(f"  DISK 최대 시각: UTC {summary['disk_max_time_utc']} | KST {summary['disk_max_time_kst']}")
     
-    
-    fig = plot(in_path, args.out_dir, tz=args.tz)
-    if fig:
-        print(f"[정보] 그래프 저장: {fig}")
-
+    fig_req = plot(in_path, args.out_dir, tz=args.tz)
     fig_kst = plot(in_path, args.out_dir, tz="kst")
     fig_utc = plot(in_path, args.out_dir, tz="utc")
-    print(f"[정보] 그래프(양쪽 시간대) 저장: {fig_kst}, {fig_utc}")
+    if fig_req:
+        print(f"[정보] 라인 그래프 저장: {fig_req}")
+        print(f"[정보] 라인 그래프(추가): {fig_kst}, {fig_utc}")
+        
+    proc_items = summarize_processes(in_path)
+    if proc_items:
+        print_top_processes(proc_items, key="cpu_avg", top=10)
+        print_top_processes(proc_items, key="mem_avg", top=10)
+        cpu_bar, mem_bar = plot_proc_bars(proc_items, args.out_dir, args.date)
+        print(f"[정보] 프로세스 그래프 저장: {cpu_bar}, {mem_bar}")
+    else:
+        print("[정보] 프로세스 데이터가 없어 요약/그래프를 건너뜁니다.")        
 
 if __name__ == "__main__":
     main()
